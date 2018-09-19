@@ -34,15 +34,16 @@ var (
 	tpl = template.Must(template.
 		New("file").
 		Funcs(map[string]interface{}{
-			"firemodelVersion":        func() string { return version.Version },
-			"toSwiftType":             toSwiftType,
-			"toScreamingSnake":        strcase.ToScreamingSnake,
-			"toCamel":                 strcase.ToCamel,
-			"toLowerCamel":            strcase.ToLowerCamel,
-			"filterFieldsEnumsOnly":   filterFieldsEnumsOnly,
-			"filterFieldsStructsOnly": filterFieldsStructsOnly,
-			"hasFieldsOrStructs":      hasFieldsOrStructs,
-			"firestorePath":           firestorePath,
+			"firemodelVersion":         func() string { return version.Version },
+			"toSwiftType":              toSwiftType,
+			"toScreamingSnake":         strcase.ToScreamingSnake,
+			"toCamel":                  strcase.ToCamel,
+			"toLowerCamel":             strcase.ToLowerCamel,
+			"filterFieldsEnumsOnly":    filterFieldsEnumsOnly,
+			"filterFieldsNonEnumsOnly": filterFieldsNonEnumsOnly,
+			"filterFieldsStructsOnly":  filterFieldsStructsOnly,
+			"hasFieldsOrStructs":       hasFieldsOrStructs,
+			"firestorePath":            firestorePath,
 		}).
 		Parse(file),
 	)
@@ -72,6 +73,17 @@ func filterFieldsEnumsOnly(in []*firemodel.SchemaField) []*firemodel.SchemaField
 	return out
 }
 
+func filterFieldsNonEnumsOnly(in []*firemodel.SchemaField) []*firemodel.SchemaField {
+	var out []*firemodel.SchemaField
+	for _, i := range in {
+		if _, ok := i.Type.(*firemodel.Enum); ok {
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
 func filterFieldsStructsOnly(in []*firemodel.SchemaField) []*firemodel.SchemaField {
 	var out []*firemodel.SchemaField
 	for _, i := range in {
@@ -92,7 +104,11 @@ func toSwiftType(root bool, firetype firemodel.SchemaFieldType) string {
 	case *firemodel.Double:
 		return "Float = 0.0"
 	case *firemodel.Timestamp:
-		return "Date = Date()"
+		if root {
+			return "Date = Date()"
+		} else {
+			return "Date"
+		}
 	case *firemodel.URL:
 		if root {
 			return "URL?"
@@ -233,14 +249,14 @@ import Pring
 
     override func encode(_ key: String, value: Any?) -> Any? {
         switch key {
-        {{range .Fields | filterFieldsEnumsOnly -}}
+        {{- range .Fields | filterFieldsEnumsOnly}}
         case "{{.Name | toLowerCamel}}":
             return self.{{.Name | toLowerCamel}}?.firestoreValue
-				{{- end}}
-        {{range .Fields | filterFieldsStructsOnly -}}
+        {{- end}}
+        {{- range .Fields | filterFieldsStructsOnly}}
         case "{{.Name | toLowerCamel}}":
             return self.{{.Name | toLowerCamel}}?.firestoreValue
-				{{- end}}
+        {{- end}}
         default:
             break
         }
@@ -249,10 +265,17 @@ import Pring
 
     override func decode(_ key: String, value: Any?) -> Bool {
         switch key {
-        {{range .Fields | filterFieldsEnumsOnly -}}
+        {{- range .Fields | filterFieldsEnumsOnly}}
         case "{{.Name | toLowerCamel}}":
             self.{{.Name | toLowerCamel}} = {{.Name | toCamel }}(firestoreValue: value)
-            {{- end}}
+        {{- end}}
+        {{- range .Fields | filterFieldsStructsOnly}}
+        case "{{.Name | toLowerCamel}}":
+          if let value = value as? [AnyHashable: Any] {
+            self.clientProfile = ClientProfile(firestoreValue: value)
+            return true
+          }
+          {{- end}}
         default:
             break
         }
@@ -265,20 +288,20 @@ import Pring
 {{- if .Comment}}
 // {{.Comment}}
 {{- else}}
-// TODO: Add documentation to {{.Name}}.
+// TODO: Add documentation to {{.Name | toCamel}}.
 {{- end}}
 @objc enum {{.Name | toCamel }}: Int {
     {{- range .Values}}
     {{- if .Comment}}
     // {{.Comment}}
     {{- else}}
-    // TODO: Add documentation to {{.Name}}.
+    // TODO: Add documentation to {{.Name | toCamel}}.
     {{- end}}
     case {{.Name | toLowerCamel}}
     {{- end}}
 }
 
-extension {{.Name}}: CustomDebugStringConvertible {
+extension {{.Name | toCamel}}: CustomDebugStringConvertible {
     init?(firestoreValue value: Any?) {
         guard let value = value as? String else {
             return nil
@@ -312,15 +335,44 @@ extension {{.Name}}: CustomDebugStringConvertible {
 {{- else}}
 // TODO: Add documentation to {{.Name}}.
 {{- end}}
-@objc struct {{.Name | toCamel }} {
-    {{- range .Fields}}
-    {{- if .Comment}}
-    // {{.Comment}}
-    {{- else}}
-    // TODO: Add documentation to {{.Name}}.
-    {{- end}}
-    case {{.Name | toLowerCamel}}
-    {{- end}}
+struct {{.Name | toCamel }} {
+  {{- range .Fields}}
+  {{- if .Comment}}
+  // {{.Comment}}
+  {{- else}}
+  // TODO: Add documentation to {{.Name}}.
+  {{- end}}
+  var {{.Name | toLowerCamel -}}: {{.Type | toSwiftType true}}
+  {{- end}}
+}
+
+extension {{.Name | toCamel}} {
+  init?(firestoreValue value: [AnyHashable: Any]?) {
+  	guard let value = value else {
+  			return nil
+  	}
+  	{{- range .Fields | filterFieldsEnumsOnly}}
+  	if let value = {{.Type | toSwiftType false}}(firestoreValue: value["{{.Name | toLowerCamel}}"]) {
+  		self.{{.Name | toLowerCamel}} = value
+  	}
+  	{{- end}}
+  	{{- range .Fields | filterFieldsNonEnumsOnly}}
+  	if let value = value["{{.Name | toLowerCamel}}"] as? {{.Type | toSwiftType false}} {
+  		self.{{.Name | toLowerCamel}} = value
+  	}
+  	{{- end}}
+  }
+
+  var firestoreValue: [AnyHashable: Any]? {
+  	return [
+  	{{- range .Fields | filterFieldsEnumsOnly}}
+  		"{{.Name | toLowerCamel}}": self.{{.Name | toLowerCamel}}?.firestoreValue as Any,
+  	{{- end}}
+  	{{- range .Fields | filterFieldsNonEnumsOnly}}
+  		"{{.Name | toLowerCamel}}": self.{{.Name | toLowerCamel}},
+  	{{- end}}
+  	]
+  }
 }
 `
 )
