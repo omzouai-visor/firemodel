@@ -3,7 +3,6 @@ package firemodel
 import (
 	"io"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/iancoleman/strcase"
 	"github.com/mickeyreiss/firemodel/internal/ast"
 	"github.com/pkg/errors"
@@ -139,7 +138,6 @@ func (c *configSchemaCompiler) compileStructs() (out []*SchemaStruct) {
 			panic(err)
 		}
 
-		spew.Dump(v)
 		out = append(out, &SchemaStruct{
 			Name:    strcase.ToCamel(string(v.Struct.Identifier)),
 			Comment: v.Comment,

@@ -2,7 +2,7 @@
 
 package firemodel
 
-// TODO: Add comment to &{TestStruct  [%!s(*firemodel.SchemaField=&{where  0x1471180}) %!s(*firemodel.SchemaField=&{how_much  0x1471180})]}
+// TODO: Add comment to TestStruct
 type TestStruct struct {
 	// TODO: Add comment to TestStruct.where.
 	Where string `firestore:"where"`
