@@ -2,7 +2,6 @@ package ios
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"text/template"
 
@@ -170,7 +169,7 @@ func firestorePath(model firemodel.SchemaModel) string {
 	}
 
 	if len(args) == 0 {
-		log.Printf("ios: warning: no firestore path for %s", model.Name)
+		fmt.Printf("warning: no firestore path for %s", model.Name)
 		return ""
 	}
 
